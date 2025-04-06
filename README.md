@@ -1,7 +1,8 @@
 # FreecellJS
 
-![Build Game](https://github.com/AdsGames/freecell-js/workflows/Build%20Game/badge.svg)
-[![Maintainability](https://api.codeclimate.com/v1/badges/f92c2150cce596dfb443/maintainability)](https://codeclimate.com/github/AdsGames/freecell-js/maintainability)
+[![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=AdsGames_freecell-js&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=AdsGames_freecell-js)
+[![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=AdsGames_freecell-js&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=AdsGames_freecell-js)
+[![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=AdsGames_freecell-js&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=AdsGames_freecell-js)
 
 Freecell game using Phaser 3
 
@@ -13,11 +14,12 @@ Freecell game using Phaser 3
 
 Simply run
 
-- `npm install`
-- `npm start`
+- `yarn install`
+- `yarn dev`
 
 ## Building
 
 Simply run
 
-- `npm run build`
+- `yarn build`
+- `yarn serve`
