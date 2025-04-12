@@ -11,8 +11,8 @@ export class Pile extends Phaser.GameObjects.Zone {
 
     // Additional height for tableau
     const addHeight = TABLEAU_PILES.includes(this.pileId)
-      ? STACK_OFFSET * 10
-      : STACK_OFFSET * 2;
+      ? STACK_OFFSET * 11
+      : 0;
 
     // Get position
     const position = PILE_POSITIONS[this.pileId];
