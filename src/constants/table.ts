@@ -1,4 +1,7 @@
+import * as Phaser from "phaser";
+
 import { CARD_DIMENSIONS } from "./deck";
+import { SCREEN_WIDTH } from "./screen";
 
 /**
  * Define the constants for the table.
@@ -20,7 +23,6 @@ export enum PileId {
   FreeCell2 = "FREECELL_2",
   FreeCell3 = "FREECELL_3",
   FreeCell4 = "FREECELL_4",
-  None = "NONE",
 }
 
 /**
@@ -57,34 +59,59 @@ export const FREECELL_PILES = [
   PileId.FreeCell4,
 ];
 
+export const ALL_PILES = [
+  ...TABLEAU_PILES,
+  ...FOUNDATION_PILES,
+  ...FREECELL_PILES,
+];
+
 /**
- * Offsets for card positions
+ * The 8 tableau columns are centred on screen. In the top row, free cells
+ * align with the left edge and foundations with the right edge, with a gap
+ * between the two groups.
  */
-const PILE_OFFSET = CARD_DIMENSIONS.width + 10;
-const TOP_OFFSET = CARD_DIMENSIONS.width + 6;
+const COLUMN_SPACING = CARD_DIMENSIONS.width + 10;
+const TOP_ROW_SPACING = CARD_DIMENSIONS.width + 6;
+const TABLE_WIDTH = 7 * COLUMN_SPACING + CARD_DIMENSIONS.width;
+
+export const TABLE_LEFT = (SCREEN_WIDTH - TABLE_WIDTH) / 2;
+export const TABLE_RIGHT = TABLE_LEFT + TABLE_WIDTH;
+
+const TOP_ROW_Y = 100;
+const TABLEAU_Y = 240;
+
+const LEFT_X = TABLE_LEFT + CARD_DIMENSIONS.width / 2;
+const RIGHT_X = TABLE_RIGHT - CARD_DIMENSIONS.width / 2;
+
+const column = (i: number): Phaser.Math.Vector2 =>
+  new Phaser.Math.Vector2(LEFT_X + i * COLUMN_SPACING, TABLEAU_Y);
+
+const freeCell = (i: number): Phaser.Math.Vector2 =>
+  new Phaser.Math.Vector2(LEFT_X + i * TOP_ROW_SPACING, TOP_ROW_Y);
+
+const foundation = (i: number): Phaser.Math.Vector2 =>
+  new Phaser.Math.Vector2(RIGHT_X - (3 - i) * TOP_ROW_SPACING, TOP_ROW_Y);
 
 /**
  * Positions of piles on screen
  */
 export const PILE_POSITIONS: Record<PileId, Phaser.Math.Vector2> = {
-  [PileId.FreeCell1]: new Phaser.Math.Vector2(68, 100),
-  [PileId.FreeCell2]: new Phaser.Math.Vector2(68 + TOP_OFFSET, 100),
-  [PileId.FreeCell3]: new Phaser.Math.Vector2(68 + 2 * TOP_OFFSET, 100),
-  [PileId.FreeCell4]: new Phaser.Math.Vector2(68 + 3 * TOP_OFFSET, 100),
+  [PileId.FreeCell1]: freeCell(0),
+  [PileId.FreeCell2]: freeCell(1),
+  [PileId.FreeCell3]: freeCell(2),
+  [PileId.FreeCell4]: freeCell(3),
 
-  [PileId.Foundation1]: new Phaser.Math.Vector2(454, 100),
-  [PileId.Foundation2]: new Phaser.Math.Vector2(454 + TOP_OFFSET, 100),
-  [PileId.Foundation3]: new Phaser.Math.Vector2(454 + 2 * TOP_OFFSET, 100),
-  [PileId.Foundation4]: new Phaser.Math.Vector2(454 + 3 * TOP_OFFSET, 100),
+  [PileId.Foundation1]: foundation(0),
+  [PileId.Foundation2]: foundation(1),
+  [PileId.Foundation3]: foundation(2),
+  [PileId.Foundation4]: foundation(3),
 
-  [PileId.Tableau1]: new Phaser.Math.Vector2(68, 240),
-  [PileId.Tableau2]: new Phaser.Math.Vector2(68 + PILE_OFFSET, 240),
-  [PileId.Tableau3]: new Phaser.Math.Vector2(68 + 2 * PILE_OFFSET, 240),
-  [PileId.Tableau4]: new Phaser.Math.Vector2(68 + 3 * PILE_OFFSET, 240),
-  [PileId.Tableau5]: new Phaser.Math.Vector2(68 + 4 * PILE_OFFSET, 240),
-  [PileId.Tableau6]: new Phaser.Math.Vector2(68 + 5 * PILE_OFFSET, 240),
-  [PileId.Tableau7]: new Phaser.Math.Vector2(68 + 6 * PILE_OFFSET, 240),
-  [PileId.Tableau8]: new Phaser.Math.Vector2(68 + 7 * PILE_OFFSET, 240),
-
-  [PileId.None]: new Phaser.Math.Vector2(0, 0),
+  [PileId.Tableau1]: column(0),
+  [PileId.Tableau2]: column(1),
+  [PileId.Tableau3]: column(2),
+  [PileId.Tableau4]: column(3),
+  [PileId.Tableau5]: column(4),
+  [PileId.Tableau6]: column(5),
+  [PileId.Tableau7]: column(6),
+  [PileId.Tableau8]: column(7),
 };
