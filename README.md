@@ -4,7 +4,7 @@
 [![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=AdsGames_freecell-js&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=AdsGames_freecell-js)
 [![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=AdsGames_freecell-js&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=AdsGames_freecell-js)
 
-Freecell game using Phaser 3
+Freecell game using Phaser 4
 
 ## Demo
 
@@ -14,12 +14,12 @@ Freecell game using Phaser 3
 
 Simply run
 
-- `yarn install`
-- `yarn dev`
+- `pnpm install`
+- `pnpm dev`
 
 ## Building
 
 Simply run
 
-- `yarn build`
-- `yarn serve`
+- `pnpm build`
+- `pnpm serve`

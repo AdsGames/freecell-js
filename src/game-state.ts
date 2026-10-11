@@ -1,18 +1,20 @@
-/* eslint-disable max-lines-per-function */
-/* eslint-disable max-lines */
 import * as Phaser from "phaser";
 
-import Deck from "./deck";
 import Card from "./card";
-import {
-  FOUNDATION_PILES,
-  FREECELL_PILES,
-  PileId,
-  TABLEAU_PILES,
-} from "./constants/table";
+import Deck, { type Move, type Piles } from "./deck";
 import { STACK_DRAG_OFFSET } from "./constants/deck";
-import { Pile } from "./pile";
 import { SCREEN_HEIGHT, SCREEN_WIDTH } from "./constants/screen";
+import { ALL_PILES, type PileId, TABLE_LEFT } from "./constants/table";
+import { MAX_DEAL, MIN_DEAL, isValidDeal, randomDeal } from "./deal";
+import { Pile } from "./pile";
+import { type Stats, recordLoss, recordWin } from "./stats";
+import {
+  BUTTON_GAP,
+  Panel,
+  cascade,
+  createButton,
+  createStatusText,
+} from "./ui";
 
 const sceneConfig: Phaser.Types.Scenes.SettingsConfig = {
   active: false,
@@ -20,325 +22,348 @@ const sceneConfig: Phaser.Types.Scenes.SettingsConfig = {
   visible: false,
 };
 
+const DOUBLE_CLICK_MS = 350;
+const DRAG_THRESHOLD = 4;
+
+interface HistoryEntry {
+  piles: Piles;
+  moves: number;
+}
+
+const formatTime = (ms: number): string => {
+  const seconds = Math.floor(ms / 1000);
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+};
+
+const dealFromHash = (): number | null => {
+  const n = Number(window.location.hash.slice(1));
+  return isValidDeal(n) ? n : null;
+};
+
 export default class GameState extends Phaser.Scene {
-  private score: number = 0;
+  private deck!: Deck;
+
+  private dealNumber = 0;
+
+  private moves = 0;
+
+  private startTime: number | null = null;
+
+  private finalTime = 0;
+
+  private won = false;
+
+  private history: HistoryEntry[] = [];
 
   private dragChildren: Card[] = [];
 
-  private deck!: Deck;
+  private lastClick: { card: Card; time: number } | null = null;
 
-  private scoreText!: Phaser.GameObjects.Text;
+  private statusText!: Phaser.GameObjects.Text;
 
-  private winText!: Phaser.GameObjects.Text;
+  private dealLabel!: Phaser.GameObjects.Text;
+
+  private panel!: Panel;
 
   public constructor() {
     super(sceneConfig);
   }
 
   public create(): void {
-    // Game state variables
-    this.score = 0;
-    this.dragChildren = [];
-
-    // Add background
     this.add.image(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2, "img_background");
 
-    // Add deck
-    this.deck = new Deck(this);
+    ALL_PILES.forEach((pileId) => {
+      this.add.existing(new Pile(this, pileId));
+    });
 
-    this.createZones();
+    this.deck = new Deck(this);
+    this.panel = new Panel(this);
+
     this.createInputListeners();
     this.createButtons();
-    this.createText();
+
+    this.statusText = createStatusText(this);
+
+    this.startDeal(dealFromHash() ?? randomDeal());
   }
 
-  public createZones(): void {
-    Object.values(PileId).forEach((pileId) => {
-      const pile = new Pile(this, pileId);
-      this.add.existing(pile);
-    });
+  public update(): void {
+    this.statusText.setText(
+      `MOVES:${this.moves} ${formatTime(this.elapsed())}`
+    );
   }
 
-  public createInputListeners(): void {
-    // Start drag card
+  private createInputListeners(): void {
+    this.input.dragDistanceThreshold = DRAG_THRESHOLD;
+
     this.input.on(
       "dragstart",
-      (
-        _pointer: Phaser.Input.Pointer,
-        gameObject: Phaser.GameObjects.GameObject
-      ) => {
-        if (gameObject instanceof Card) {
-          this.dragCardStart(gameObject);
+      (_pointer: Phaser.Input.Pointer, obj: Phaser.GameObjects.GameObject) => {
+        if (obj instanceof Card) {
+          this.dragCardStart(obj);
         }
-      },
-      this
+      }
     );
 
-    // End drag card
-    this.input.on(
-      "dragend",
-      (
-        _pointer: Phaser.Input.Pointer,
-        gameObject: Phaser.GameObjects.GameObject
-      ) => {
-        if (gameObject instanceof Card) {
-          this.dragCardEnd();
-        }
-      },
-      this
-    );
-
-    // Drop on pile
-    this.input.on(
-      "drop",
-      (
-        _pointer: Phaser.Input.Pointer,
-        gameObject: Phaser.GameObjects.GameObject,
-        dropZone: Phaser.GameObjects.GameObject
-      ) => {
-        if (gameObject instanceof Card) {
-          this.dropCard(gameObject, dropZone);
-        }
-      },
-      this
-    );
-
-    // Drag card
     this.input.on(
       "drag",
       (
         _pointer: Phaser.Input.Pointer,
-        gameObject: Phaser.GameObjects.GameObject,
+        obj: Phaser.GameObjects.GameObject,
         dragX: number,
         dragY: number
       ) => {
-        if (gameObject instanceof Card) {
-          this.dragCard(gameObject, dragX, dragY);
+        if (obj instanceof Card) {
+          this.dragCard(dragX, dragY);
         }
-      },
-      this
+      }
+    );
+
+    this.input.on(
+      "drop",
+      (
+        _pointer: Phaser.Input.Pointer,
+        obj: Phaser.GameObjects.GameObject,
+        zone: Phaser.GameObjects.GameObject
+      ) => {
+        if (obj instanceof Card && zone instanceof Pile) {
+          this.dropCards(zone.pileId);
+        }
+      }
+    );
+
+    this.input.on(
+      "dragend",
+      (_pointer: Phaser.Input.Pointer, obj: Phaser.GameObjects.GameObject) => {
+        if (obj instanceof Card) {
+          this.dragCardEnd();
+        }
+      }
+    );
+
+    // A tap is a press and release without moving far enough to drag
+    this.input.on(
+      "gameobjectup",
+      (pointer: Phaser.Input.Pointer, obj: Phaser.GameObjects.GameObject) => {
+        if (obj instanceof Card && pointer.getDistance() < DRAG_THRESHOLD) {
+          this.tapCard(obj, pointer);
+        }
+      }
     );
   }
 
-  public createButtons(): void {
-    // Redeal button
-    this.add.graphics().fillStyle(0xffffff, 1).fillRect(24, 10, 80, 18);
-
-    this.add
-      .text(36, 10, "Redeal", { color: "#000" })
-      .setInteractive()
-      .on(
-        "pointerdown",
+  private createButtons(): void {
+    const buttons: [string, () => void][] = [
+      [
+        "Redeal",
         () => {
-          this.deck.deal(this);
-          this.winText.setVisible(false);
-          this.score = 0;
+          this.startDeal(this.dealNumber);
         },
-        this
-      );
-
-    // New deal button
-    this.add.graphics().fillStyle(0xffffff, 1).fillRect(114, 10, 90, 18);
-
-    this.add
-      .text(120, 10, "New Deal", { color: "#000" })
-      .setInteractive()
-      .on(
-        "pointerdown",
+      ],
+      [
+        "New Deal",
         () => {
-          this.deck.shuffle(this.deck.cards);
-          this.deck.deal(this);
-          this.winText.setVisible(false);
-          this.score = 0;
+          this.startDeal(randomDeal());
         },
-        this
-      );
-  }
+      ],
+      [
+        "#1000000",
+        () => {
+          this.selectDeal();
+        },
+      ],
+      [
+        "Undo",
+        () => {
+          this.undo();
+        },
+      ],
+    ];
 
-  public createText(): void {
-    this.scoreText = this.add.text(700, 12, "", {
-      color: "#FFF",
-      fontSize: "16px",
+    let x = TABLE_LEFT;
+    buttons.forEach(([label, onClick], i) => {
+      const button = createButton(this, x, label, onClick);
+      if (i === 2) {
+        this.dealLabel = button.label;
+      }
+      x += button.width + BUTTON_GAP;
     });
-
-    this.winText = this.add
-      .text(20, this.cameras.main.height - 40, "You Win!", {
-        color: "#FFF",
-        fontSize: "24px",
-      })
-      .setVisible(false);
   }
 
-  public dropScore(zoneStack: PileId, cardStack: PileId): void {
-    // Tableau to foundation
-    if (
-      TABLEAU_PILES.includes(cardStack) &&
-      FOUNDATION_PILES.includes(zoneStack)
-    ) {
-      this.score += 10;
+  private selectDeal(): void {
+    const answer = window.prompt(
+      `Deal number (${MIN_DEAL}-${MAX_DEAL})`,
+      String(this.dealNumber)
+    );
+    if (answer === null) {
+      return;
+    }
+
+    const n = Number(answer.trim());
+    if (isValidDeal(n)) {
+      this.startDeal(n);
     }
   }
 
-  public dragCardStart(card: Card): void {
-    // Populate drag children
+  private startDeal(dealNumber: number): void {
+    // Leaving a game in progress counts as a loss
+    if (this.moves > 0 && !this.won) {
+      recordLoss();
+    }
+
+    this.dealNumber = dealNumber;
+    this.dealLabel.setText(`#${dealNumber}`);
+    window.history.replaceState(null, "", `#${dealNumber}`);
+
+    this.moves = 0;
+    this.startTime = null;
+    this.finalTime = 0;
+    this.won = false;
+    this.history = [];
     this.dragChildren = [];
+    this.panel.hide();
 
-    // Validate stack for Tableau, otherwise drag single card
-    if (TABLEAU_PILES.includes(card.pile)) {
-      const children = this.deck.cardChildren(card);
-
-      // Check to ensure sequence is valid
-      let curr = card;
-      for (let i = 1; i < children.length; i += 1) {
-        if (
-          children[i].getColour() === curr.getColour() ||
-          children[i].value !== curr.value - 1
-        ) {
-          return;
-        }
-        curr = children[i];
-      }
-
-      /*
-       * Check to ensure we are not dragging more cards than free cells and tableau
-       * piles available
-       */
-      if (children.length > this.countMoves(false)) {
-        return;
-      }
-
-      // Add children to dragChildren
-      this.dragChildren = children;
-    } else {
-      this.dragChildren.push(card);
-    }
-
-    // Set depths
-    for (let i = 0; i < this.dragChildren.length; i += 1) {
-      this.dragChildren[i].setDepth(100 + i);
-    }
+    this.deck.deal(dealNumber);
+    this.deck.layoutAll(false);
+    this.afterMove();
   }
 
-  public dragCardEnd(): void {
-    // Drop all other cards on top
-    this.dragChildren.forEach((child: Card) => {
-      child.reposition(child.pile, child.position);
+  private dragCardStart(card: Card): void {
+    this.dragChildren = [];
+    if (this.won) {
+      return;
+    }
+
+    const cards = this.deck.pickUp(card);
+    if (!cards || cards.length > this.deck.maxMovable(false)) {
+      card.flash();
+      return;
+    }
+
+    this.dragChildren = cards;
+    cards.forEach((c, i) => {
+      c.lift(i);
     });
   }
 
-  public dragCard(_card: Card, dragX: number, dragY: number): void {
-    // Set positions
-    for (let i = 0; i < this.dragChildren.length; i += 1) {
-      this.dragChildren[i].x = dragX;
-      this.dragChildren[i].y = dragY + i * STACK_DRAG_OFFSET;
-    }
+  private dragCard(dragX: number, dragY: number): void {
+    this.dragChildren.forEach((card, i) => {
+      card.setPosition(dragX, dragY + i * STACK_DRAG_OFFSET);
+    });
   }
 
-  // eslint-disable-next-line
-  public dropCard(_card: Card, dropZone: Phaser.GameObjects.GameObject): void {
-    console.log("dropCard", dropZone.name, this.dragChildren);
-    // Get card
+  private dropCards(to: PileId): void {
     if (this.dragChildren.length === 0) {
       return;
     }
 
-    const [card] = this.dragChildren;
-
-    // Potentially unsafe!
-    const pileId = dropZone.name as PileId;
-
-    // Get top card on current stack
-    const topCard = this.deck.topCard(pileId);
-
-    // Free cell
-    if (FREECELL_PILES.includes(pileId)) {
-      if (this.deck.isEmpty(pileId) && this.dragChildren.length === 1) {
-        this.dropScore(pileId, card.pile);
-        card.reposition(pileId, 0);
-      }
-    }
-
-    // Tableau
-    else if (TABLEAU_PILES.includes(pileId)) {
-      if (!topCard) {
-        // Dropping on the tableau invalidates the previous count
-        if (this.dragChildren.length > this.countMoves(true)) {
-          return;
-        }
-
-        this.dropScore(pileId, card.pile);
-        card.reposition(pileId, 0);
-      } else if (
-        card.getColour() !== topCard.getColour() &&
-        card.value === topCard.value - 1
-      ) {
-        this.dropScore(pileId, card.pile);
-        card.reposition(pileId, topCard.position + 1);
-      }
-    }
-
-    // Foundation
-    else if (FOUNDATION_PILES.includes(pileId)) {
-      if (!topCard) {
-        if (card.value === 1) {
-          this.dropScore(pileId, card.pile);
-          card.reposition(pileId, 0);
-        }
-      } else if (
-        card.suit === topCard.suit &&
-        card.value === topCard.value + 1
-      ) {
-        this.dropScore(pileId, card.pile);
-        card.reposition(pileId, topCard.position + 1);
-      }
-    }
-
-    // Reset drag children
-    for (let i = 1; i < this.dragChildren.length; i += 1) {
-      this.dragChildren[i].reposition(card.pile, card.position + i);
+    if (this.deck.canMove(this.dragChildren, to)) {
+      this.commitMove(this.dragChildren, to);
+    } else if (this.deck.pileOf(this.dragChildren[0]) !== to) {
+      this.dragChildren.forEach((card) => {
+        card.flash();
+      });
     }
   }
 
-  public update(): void {
-    // Ensure score is within range
-    if (this.score < 0) {
-      this.score = 0;
+  private dragCardEnd(): void {
+    // Settle dragged cards wherever they now belong. A rejected drop returns.
+    if (this.dragChildren.length > 0) {
+      this.deck.layout(this.deck.pileOf(this.dragChildren[0]), true);
     }
-
-    // Win
-    const cardsOnFoundation = FOUNDATION_PILES.reduce(
-      (acc, pile) => acc + this.deck.countCards(pile),
-      0
-    );
-    if (cardsOnFoundation === 52) {
-      this.winText.setVisible(true);
-    }
-
-    // Display lives
-    this.scoreText.setText(`SCORE: ${this.score}`);
+    this.dragChildren = [];
   }
 
-  private countMoves(toTableau: boolean): number {
-    // Number of empty free cells
-    const emptyFreeCells = FREECELL_PILES.reduce(
-      (acc, pileId) => acc + (this.deck.isEmpty(pileId) ? 1 : 0),
-      0
-    );
-
-    // Number of empty tableau piles
-    let emptyTableau = TABLEAU_PILES.reduce(
-      (acc, pileId) => acc + (this.deck.isEmpty(pileId) ? 1 : 0),
-      0
-    );
-
-    /*
-     * If moving to tableau, we need to subtract 1 from empty tableau
-     * because we are moving a card to it
-     */
-    if (toTableau && emptyTableau > 0) {
-      emptyTableau -= 1;
+  /**
+   * A touch tap moves the card at once. A mouse needs a double-click, so a
+   * single click can still start a drag without moving anything.
+   */
+  private tapCard(card: Card, pointer: Phaser.Input.Pointer): void {
+    if (!pointer.wasTouch) {
+      const isDouble =
+        this.lastClick?.card === card &&
+        pointer.upTime - this.lastClick.time < DOUBLE_CLICK_MS;
+      this.lastClick = isDouble ? null : { card, time: pointer.upTime };
+      if (!isDouble) {
+        return;
+      }
     }
 
-    return 2 ** emptyTableau * (emptyFreeCells + 1);
+    if (this.won) {
+      return;
+    }
+
+    const move = this.deck.quickMove(card);
+    if (move === null) {
+      card.flash();
+    } else {
+      this.commitMove(move.cards, move.to);
+    }
+  }
+
+  private commitMove(cards: readonly Card[], to: PileId): void {
+    this.history.push({ piles: this.deck.snapshot(), moves: this.moves });
+    this.startTime ??= this.time.now;
+    this.moves += 1;
+
+    this.layoutMove(this.deck.move(cards, to));
+    this.afterMove();
+  }
+
+  private layoutMove({ from, to }: Move): void {
+    this.deck.layout(from, true);
+    this.deck.layout(to, true);
+  }
+
+  /**
+   * Play safe cards to the foundations, then check for a win or a dead end.
+   */
+  private afterMove(): void {
+    let next = this.deck.nextAutoMove();
+    while (next) {
+      this.layoutMove(this.deck.move([next.card], next.to));
+      next = this.deck.nextAutoMove();
+    }
+
+    if (this.deck.isWon()) {
+      this.win();
+    } else if (!this.deck.hasMoves()) {
+      this.panel.show("NO MOVES LEFT", ["Undo, Redeal or", "start a New Deal"]);
+    }
+  }
+
+  private undo(): void {
+    const entry = this.history.pop();
+    if (!entry || this.won) {
+      return;
+    }
+
+    this.deck.restore(entry.piles);
+    this.moves = entry.moves;
+    this.panel.hide();
+    this.deck.layoutAll(true);
+  }
+
+  private elapsed(): number {
+    if (this.won) {
+      return this.finalTime;
+    }
+    return this.startTime === null ? 0 : this.time.now - this.startTime;
+  }
+
+  private win(): void {
+    this.finalTime = this.elapsed();
+    this.won = true;
+
+    this.showWinPanel(recordWin());
+    cascade(this, this.deck.cards);
+  }
+
+  private showWinPanel(stats: Stats): void {
+    this.panel.show("YOU WIN!", [
+      `MOVES ${this.moves}  TIME ${formatTime(this.finalTime)}`,
+      `WINS ${stats.wins}  LOSSES ${stats.losses}`,
+      `STREAK ${stats.streak}  BEST ${stats.bestStreak}`,
+    ]);
   }
 }
